@@ -244,4 +244,4 @@ python -m pip install --user -U yt-dlp
 
 ## License
 
-[Adit Pathania]
+[Tasty LLC]
