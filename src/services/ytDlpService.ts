@@ -80,6 +80,32 @@ async function runYtDlpRaw(args: string[], cwd?: string) {
 
 const MODERN_UA = "Instagram 219.0.0.12.117 Android";
 
+// Proxy configuration - Free proxy services
+const PROXY_LIST = [
+	// Free proxy services (uncomment to use)
+	// "http://8.8.8.8:8080",
+	// "http://1.1.1.1:8080",
+	// "http://proxy-server:8080",
+	
+	// Paid proxy services (more reliable)
+	// "http://username:password@proxy.example.com:8080",
+];
+
+function getRandomProxy(): string | undefined {
+	// Check environment variable first
+	const envProxy = process.env.INSTAGRAM_PROXY;
+	if (envProxy) {
+		console.log(`[${new Date().toISOString()}] 🔄 Using environment proxy: ${envProxy}`);
+		return envProxy;
+	}
+	
+	// Fall back to proxy list
+	if (PROXY_LIST.length === 0) return undefined;
+	const proxy = PROXY_LIST[Math.floor(Math.random() * PROXY_LIST.length)];
+	console.log(`[${new Date().toISOString()}] 🔄 Using random proxy: ${proxy}`);
+	return proxy;
+}
+
 function buildCommonArgs(url: string): string[] {
 	const base = ["--geo-bypass", "--user-agent", MODERN_UA];
 	const ffmpegLocation = getFFmpegLocation();
@@ -101,6 +127,12 @@ function buildCommonArgs(url: string): string[] {
 		base.push("--no-check-certificates");
 		base.push("--ignore-errors");
 		base.push("--extractor-retries", "5");
+		
+		// Add proxy if available
+		const proxy = getRandomProxy();
+		if (proxy) {
+			base.push("--proxy", proxy);
+		}
 	}
 	return base;
 }
