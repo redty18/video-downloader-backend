@@ -1,0 +1,13 @@
+# Render Build Configuration
+# This file helps Render understand how to build and deploy your app
+
+# Build command: npm run build
+# Start command: npm start
+# Node version: 18
+
+# Environment variables needed:
+# NODE_ENV=production
+# PORT=3000
+
+# Note: Render will need Python and yt-dlp installed
+# You may need to add a build script to install Python dependencies

@@ -2,6 +2,7 @@ import express from "express";
 import morgan from "morgan";
 import path from "path";
 import fs from "fs";
+import cors from "cors";
 import { downloadRouter } from "./routes/download";
 
 // Environment configuration
@@ -11,6 +12,16 @@ const AUDIOS_DIR = process.env.AUDIOS_DIR || "audios";
 const DATA_DIR = process.env.DATA_DIR || "data";
 
 const app = express();
+
+// Enable CORS for all routes
+const corsOrigins = process.env.NODE_ENV === 'production' 
+	? [process.env.FRONTEND_URL || 'http://localhost:3000']
+	: ['http://localhost:5173', 'http://127.0.0.1:5173'];
+
+app.use(cors({
+	origin: corsOrigins,
+	credentials: true
+}));
 
 // Custom logging middleware
 const requestLogger = (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -90,7 +101,7 @@ app.get("/health", (_req, res) => {
 		const stats = {
 			status: "ok",
 			timestamp: new Date().toISOString(),
-			environment: "development",
+			environment: process.env.NODE_ENV || "development",
 			uptime: process.uptime(),
 			memory: process.memoryUsage(),
 			directories: {
@@ -119,11 +130,11 @@ app.get("/health", (_req, res) => {
 // API routes
 app.use("/api", downloadRouter);
 
-// Root endpoint
-app.get("/", (_req, res) => {
+// API documentation
+app.get("/api", (_req, res) => {
 	res.type("text/plain").send(
 		`Vid Downloader API v1.0.0\n` +
-		`Environment: development\n` +
+		`Environment: ${process.env.NODE_ENV || "development"}\n` +
 		`- GET /health - System status and health\n` +
 		`- POST /api/download { url } - Download video and extract audio\n` +
 		`- GET /downloads/<file> - Access downloaded videos\n` +
@@ -202,11 +213,34 @@ app.use((req, res) => {
 	});
 });
 
+// Serve built frontend in production (after all API routes)
+if (process.env.NODE_ENV === 'production') {
+	const frontendBuildPath = path.join(__dirname, '../frontend/dist');
+	console.log(`[${new Date().toISOString()}] 🔍 Checking frontend build path: ${frontendBuildPath}`);
+	console.log(`[${new Date().toISOString()}] 📁 Frontend build exists: ${fs.existsSync(frontendBuildPath)}`);
+	
+	if (fs.existsSync(frontendBuildPath)) {
+		console.log(`[${new Date().toISOString()}] 🎨 Serving frontend from: ${frontendBuildPath}`);
+		app.use(express.static(frontendBuildPath));
+		
+		// Serve index.html for all non-API routes
+		app.get('*', (req, res) => {
+			console.log(`[${new Date().toISOString()}] 🌐 Catch-all route hit: ${req.path}`);
+			if (!req.path.startsWith('/api') && !req.path.startsWith('/downloads') && !req.path.startsWith('/audios') && !req.path.startsWith('/health')) {
+				console.log(`[${new Date().toISOString()}] 📄 Serving frontend for: ${req.path}`);
+				res.sendFile(path.join(frontendBuildPath, 'index.html'));
+			}
+		});
+	} else {
+		console.log(`[${new Date().toISOString()}] ❌ Frontend build not found at: ${frontendBuildPath}`);
+	}
+}
+
 app.listen(PORT, () => {
 	const timestamp = new Date().toISOString();
 	console.log(`[${timestamp}] 🚀 Vid Downloader API started`);
 	console.log(`[${timestamp}] 📍 Server: http://localhost:${PORT}`);
-	console.log(`[${timestamp}] 🌍 Environment: development`);
+	console.log(`[${timestamp}] 🌍 Environment: ${process.env.NODE_ENV || "development"}`);
 	console.log(`[${timestamp}] 📁 Downloads: ./${DOWNLOADS_DIR}`);
 	console.log(`[${timestamp}] 🎵 Audios: ./${AUDIOS_DIR}`);
 	console.log(`[${timestamp}] 💾 Data: ./${DATA_DIR}`);

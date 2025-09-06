@@ -1,0 +1,237 @@
+import { spawn } from "child_process";
+import path from "path";
+import { randomUUID } from "crypto";
+
+export type DownloadResult = {
+	id: string;
+	platform: "instagram" | "tiktok" | "unknown";
+	inputUrl: string;
+	videoPath: string;
+	filename: string;
+	thumbnailUrl?: string;
+	audioUrl?: string;
+	audioPath?: string;
+	title?: string;
+	publishedAt?: string;
+	createdAt: string;
+};
+
+function detectPlatform(url: string): DownloadResult["platform"] {
+	if (url.includes("tiktok.com")) return "tiktok";
+	if (url.includes("instagram.com")) return "instagram";
+	return "unknown";
+}
+
+function getAugmentedEnv(): NodeJS.ProcessEnv {
+	const env = { ...process.env };
+	const appData = process.env.APPDATA;
+	if (process.platform === "win32" && appData) {
+		const scriptsDir = path.join(appData, "Python", "Python312", "Scripts");
+		env.PATH = env.PATH ? `${scriptsDir};${env.PATH}` : scriptsDir;
+	}
+	return env;
+}
+
+function getPythonCommand(): string {
+	if (process.platform === "win32") {
+		// Try common Python paths on Windows
+		const commonPaths = [
+			"python", // If it's in PATH
+			"python3", // Alternative command
+			path.join(process.env.APPDATA || "", "Python", "Python312", "python.exe"),
+			path.join(process.env.APPDATA || "", "Python", "Python311", "python.exe"),
+			path.join(process.env.APPDATA || "", "Python", "Python310", "python.exe"),
+			path.join(process.env.LOCALAPPDATA || "", "Microsoft", "WindowsApps", "python.exe"),
+			"C:\\Python312\\python.exe",
+			"C:\\Python311\\python.exe",
+			"C:\\Python310\\python.exe"
+		];
+		
+		// Return the first path that exists (we'll check in the run function)
+		return commonPaths[0]; // Start with "python" and let the fallback handle it
+	}
+	return "python";
+}
+
+function getFFmpegLocation(): string {
+	if (process.platform === "win32") {
+		// Try common FFmpeg paths on Windows
+		const commonPaths = [
+			"", // Empty means use PATH
+			path.join(process.env.LOCALAPPDATA || "", "Microsoft", "WinGet", "Packages", "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe", "ffmpeg-8.0-full_build", "bin"),
+			path.join(process.env.PROGRAMFILES || "", "ffmpeg", "bin"),
+			path.join(process.env.PROGRAMFILES || "", "ffmpeg"),
+			"C:\\ffmpeg\\bin",
+			"C:\\ffmpeg"
+		];
+		
+		// Return empty string to use PATH first, fallback will handle specific paths
+		return "";
+	}
+	return "";
+}
+
+function run(command: string, args: string[], cwd?: string): Promise<{ stdout: string; stderr: string }>
+{
+	return new Promise((resolve, reject) => {
+		const child = spawn(command, args, {
+			cwd,
+			shell: false,
+			env: getAugmentedEnv(),
+		});
+		
+		let stdout = "";
+		let stderr = "";
+		child.stdout.on("data", (d) => (stdout += d.toString()));
+		child.stderr.on("data", (d) => (stderr += d.toString()));
+		child.on("error", reject);
+		child.on("close", (code) => {
+			if (code === 0) resolve({ stdout, stderr });
+			else reject(new Error(`Command failed (${code}): ${command} ${args.join(" ")}\n${stderr}`));
+		});
+	});
+}
+
+async function runYtDlpRaw(args: string[], cwd?: string) {
+	// Try yt-dlp directly first
+	try {
+		return await run("yt-dlp", args, cwd);
+	} catch (_e) {
+		// Try python -m yt_dlp with different Python commands
+		const pythonCommands = process.platform === "win32" ? [
+			"python",
+			"python3",
+			path.join(process.env.APPDATA || "", "Python", "Python312", "python.exe"),
+			path.join(process.env.APPDATA || "", "Python", "Python311", "python.exe"),
+			path.join(process.env.APPDATA || "", "Python", "Python310", "python.exe"),
+			path.join(process.env.LOCALAPPDATA || "", "Microsoft", "WindowsApps", "python.exe"),
+			"C:\\Python312\\python.exe",
+			"C:\\Python311\\python.exe",
+			"C:\\Python310\\python.exe"
+		] : ["python", "python3"];
+
+		for (const pythonCmd of pythonCommands) {
+			try {
+				return await run(pythonCmd, ["-m", "yt_dlp", ...args], cwd);
+			} catch (_e) {
+				// Continue to next command
+			}
+		}
+		
+		// If all Python commands fail, throw the original error
+		throw new Error("yt-dlp not found. Please install yt-dlp: pip install yt-dlp");
+	}
+}
+
+const MODERN_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0 Safari/537.36";
+
+function buildCommonArgs(url: string): string[] {
+	const base = ["--geo-bypass", "--user-agent", MODERN_UA];
+	
+	// Try to find FFmpeg location
+	const ffmpegLocation = getFFmpegLocation();
+	if (ffmpegLocation) {
+		base.push("--ffmpeg-location", ffmpegLocation);
+	}
+	
+	if (url.includes("tiktok.com")) {
+		// Enhanced TikTok args for better content access without cookies
+		base.push("--extractor-args", "tiktok:player_url=1,music_download=1,age_restricted=1,bypass_age_gate=1");
+		base.push("--no-check-certificates"); // Sometimes helps with TikTok
+		base.push("--ignore-errors"); // Continue on some errors
+
+	}
+	if (url.includes("instagram.com")) {
+		base.push("--referer", "https://www.instagram.com/");
+	}
+	return base;
+}
+
+async function runYtDlpWithFallbacks(url: string, args: string[], cwd?: string) {
+	const common = buildCommonArgs(url);
+	
+	// Simple approach - just use enhanced args without complex fallbacks
+	return await runYtDlpRaw([...common, ...args], cwd);
+}
+
+export async function downloadVideoAndExtractAudio(url: string): Promise<DownloadResult> {
+	const id = randomUUID();
+	const platform = detectPlatform(url);
+	const downloadsDir = path.resolve(process.cwd(), "downloads");
+	const audiosDir = path.resolve(process.cwd(), "audios");
+	const outputTemplate = path.join(downloadsDir, `${id}-%(title)s.%(ext)s`);
+
+	const { stdout: jsonStdout } = await runYtDlpWithFallbacks(url, [
+		"-J",
+		"--no-playlist",
+		url,
+	]);
+
+	let metadata: any;
+	try { metadata = JSON.parse(jsonStdout); } catch { metadata = undefined; }
+
+	const title: string | undefined = metadata?.title;
+	const thumbnailUrl: string | undefined = Array.isArray(metadata?.thumbnails)
+		? metadata.thumbnails[metadata.thumbnails.length - 1]?.url
+		: metadata?.thumbnail;
+	const publishedAt: string | undefined = metadata?.upload_date;
+
+	let audioUrl: string | undefined;
+	if (metadata?.formats) {
+		const audioOnly = metadata.formats
+			.filter((f: any) => f.acodec && f.vcodec === "none")
+			.sort((a: any, b: any) => (b.abr || 0) - (a.abr || 0));
+		if (audioOnly.length > 0) audioUrl = audioOnly[0].url;
+	}
+	if (!audioUrl && platform === "tiktok") {
+		const music = metadata?.music || metadata?.track || metadata?.song;
+		const candidates = [
+			music?.playUrl,
+			music?.downloadUrl,
+			music?.url,
+			Array.isArray(music?.playUrl) ? music.playUrl[0] : undefined,
+			Array.isArray(music?.downloadUrl) ? music.downloadUrl[0] : undefined,
+			Array.isArray(music?.url) ? music.url[0] : undefined,
+		];
+		audioUrl = candidates.find((u) => typeof u === "string" && u.startsWith("http"));
+	}
+
+	await runYtDlpWithFallbacks(url, [
+		"-f", "bv*+ba/best",
+		"--remux-video", "mp4",
+		"-o", outputTemplate,
+		url,
+	]);
+
+	const fsMod = await import("fs");
+	const files = fsMod.readdirSync(downloadsDir).filter((f) => f.startsWith(id + "-"));
+	if (files.length === 0) throw new Error("Downloaded file not found");
+	const filename = files[0];
+	const videoPath = path.join(downloadsDir, filename);
+
+	// Extract audio to audios/
+	const audioTemplate = path.join(audiosDir, `${id}-audio.%(ext)s`);
+	await runYtDlpWithFallbacks(url, [
+		"-x",
+		"--audio-format", "mp3",
+		"--audio-quality", "0",
+		"-o", audioTemplate,
+		url,
+	]);
+	const audioFile = fsMod.readdirSync(audiosDir).find((f) => f.startsWith(id + "-audio") && f.endsWith(".mp3"));
+	const audioPath = audioFile ? path.join(audiosDir, audioFile) : undefined;
+
+	return {
+		id,
+		platform,
+		inputUrl: url,
+		videoPath,
+		filename,
+		thumbnailUrl,
+		audioUrl,
+		audioPath,
+		title,
+		publishedAt,
+		createdAt: new Date().toISOString(),
+	};
+}

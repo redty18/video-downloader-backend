@@ -32,6 +32,22 @@ function getAugmentedEnv(): NodeJS.ProcessEnv {
 	return env;
 }
 
+function getPythonCommand(): string {
+	if (process.platform === "win32") {
+		// Use the Windows Store Python path
+		return "C:\\Users\\aditp\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe";
+	}
+	return "python";
+}
+
+function getFFmpegLocation(): string {
+	if (process.platform === "win32") {
+		// Use the WinGet FFmpeg path
+		return "C:\\Users\\aditp\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0-full_build\\bin";
+	}
+	return "";
+}
+
 function run(command: string, args: string[], cwd?: string): Promise<{ stdout: string; stderr: string }>
 {
 	return new Promise((resolve, reject) => {
@@ -57,7 +73,8 @@ async function runYtDlpRaw(args: string[], cwd?: string) {
 	try {
 		return await run("yt-dlp", args, cwd);
 	} catch (_e) {
-		return await run("python", ["-m", "yt_dlp", ...args], cwd);
+		const pythonCmd = getPythonCommand();
+		return await run(pythonCmd, ["-m", "yt_dlp", ...args], cwd);
 	}
 }
 
@@ -65,6 +82,10 @@ const MODERN_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 
 
 function buildCommonArgs(url: string): string[] {
 	const base = ["--geo-bypass", "--user-agent", MODERN_UA];
+	const ffmpegLocation = getFFmpegLocation();
+	if (ffmpegLocation) {
+		base.push("--ffmpeg-location", ffmpegLocation);
+	}
 	if (url.includes("tiktok.com")) {
 		// Enhanced TikTok args for better content access without cookies
 		base.push("--extractor-args", "tiktok:player_url=1,music_download=1,age_restricted=1,bypass_age_gate=1");
@@ -156,11 +177,11 @@ export async function downloadVideoAndExtractAudio(url: string): Promise<Downloa
 		id,
 		platform,
 		inputUrl: url,
-		videoPath,
+		videoPath: path.relative(process.cwd(), videoPath),
 		filename,
 		thumbnailUrl,
 		audioUrl,
-		audioPath,
+		audioPath: audioPath ? path.relative(process.cwd(), audioPath) : undefined,
 		title,
 		publishedAt,
 		createdAt: new Date().toISOString(),
