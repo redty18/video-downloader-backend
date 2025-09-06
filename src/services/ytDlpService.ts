@@ -78,7 +78,7 @@ async function runYtDlpRaw(args: string[], cwd?: string) {
 	}
 }
 
-const MODERN_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0 Safari/537.36";
+const MODERN_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 
 function buildCommonArgs(url: string): string[] {
 	const base = ["--geo-bypass", "--user-agent", MODERN_UA];
@@ -98,8 +98,10 @@ function buildCommonArgs(url: string): string[] {
 		base.push("--no-check-certificates");
 		base.push("--ignore-errors");
 		base.push("--extractor-args", "instagram:api=1");
-		base.push("--sleep-requests", "1"); // Add delay between requests
-		base.push("--sleep-interval", "1"); // Add delay between requests
+		base.push("--sleep-requests", "2"); // Increased delay
+		base.push("--sleep-interval", "2"); // Increased delay
+		base.push("--http-headers", "X-Requested-With: XMLHttpRequest");
+		base.push("--http-headers", "X-IG-App-ID: 936619743392459");
 	}
 	return base;
 }
