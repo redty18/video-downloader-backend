@@ -189,31 +189,7 @@ app.use((err: unknown, req: express.Request, res: express.Response, next: expres
 	});
 });
 
-// 404 handler
-app.use((req, res) => {
-	const requestId = (req as any).requestId || 'unknown';
-	const timestamp = new Date().toISOString();
-	
-	console.log(`[${timestamp}] [${requestId}] ⚠️ 404 Not Found: ${req.method} ${req.path}`);
-	
-	res.status(404).json({ 
-		error: "Not found", 
-		message: "The requested endpoint does not exist",
-		timestamp,
-		requestId,
-		path: req.path,
-		method: req.method,
-		availableEndpoints: [
-			"GET /",
-			"GET /health", 
-			"POST /api/download",
-			"GET /downloads/*",
-			"GET /audios/*"
-		]
-	});
-});
-
-// Serve built frontend in production (after all API routes)
+// Serve built frontend in production (BEFORE 404 handler)
 if (process.env.NODE_ENV === 'production') {
 	const frontendBuildPath = path.join(__dirname, '../frontend/dist');
 	console.log(`[${new Date().toISOString()}] 🔍 Checking frontend build path: ${frontendBuildPath}`);
@@ -229,11 +205,81 @@ if (process.env.NODE_ENV === 'production') {
 			if (!req.path.startsWith('/api') && !req.path.startsWith('/downloads') && !req.path.startsWith('/audios') && !req.path.startsWith('/health')) {
 				console.log(`[${new Date().toISOString()}] 📄 Serving frontend for: ${req.path}`);
 				res.sendFile(path.join(frontendBuildPath, 'index.html'));
+			} else {
+				// 404 for API routes that don't exist
+				const requestId = (req as any).requestId || 'unknown';
+				const timestamp = new Date().toISOString();
+				
+				console.log(`[${timestamp}] [${requestId}] ⚠️ 404 Not Found: ${req.method} ${req.path}`);
+				
+				res.status(404).json({ 
+					error: "Not found", 
+					message: "The requested endpoint does not exist",
+					timestamp,
+					requestId,
+					path: req.path,
+					method: req.method,
+					availableEndpoints: [
+						"GET /",
+						"GET /health", 
+						"POST /api/download",
+						"GET /downloads/*",
+						"GET /audios/*"
+					]
+				});
 			}
 		});
 	} else {
 		console.log(`[${new Date().toISOString()}] ❌ Frontend build not found at: ${frontendBuildPath}`);
+		
+		// 404 handler for when frontend build doesn't exist
+		app.use((req, res) => {
+			const requestId = (req as any).requestId || 'unknown';
+			const timestamp = new Date().toISOString();
+			
+			console.log(`[${timestamp}] [${requestId}] ⚠️ 404 Not Found: ${req.method} ${req.path}`);
+			
+			res.status(404).json({ 
+				error: "Not found", 
+				message: "The requested endpoint does not exist",
+				timestamp,
+				requestId,
+				path: req.path,
+				method: req.method,
+				availableEndpoints: [
+					"GET /",
+					"GET /health", 
+					"POST /api/download",
+					"GET /downloads/*",
+					"GET /audios/*"
+				]
+			});
+		});
 	}
+} else {
+	// 404 handler for development
+	app.use((req, res) => {
+		const requestId = (req as any).requestId || 'unknown';
+		const timestamp = new Date().toISOString();
+		
+		console.log(`[${timestamp}] [${requestId}] ⚠️ 404 Not Found: ${req.method} ${req.path}`);
+		
+		res.status(404).json({ 
+			error: "Not found", 
+			message: "The requested endpoint does not exist",
+			timestamp,
+			requestId,
+			path: req.path,
+			method: req.method,
+			availableEndpoints: [
+				"GET /",
+				"GET /health", 
+				"POST /api/download",
+				"GET /downloads/*",
+				"GET /audios/*"
+			]
+		});
+	});
 }
 
 app.listen(PORT, () => {
