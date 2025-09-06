@@ -78,7 +78,7 @@ async function runYtDlpRaw(args: string[], cwd?: string) {
 	}
 }
 
-const MODERN_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0 Safari/537.36";
+const MODERN_UA = "Instagram 219.0.0.12.117 Android";
 
 function buildCommonArgs(url: string): string[] {
 	const base = ["--geo-bypass", "--user-agent", MODERN_UA];
@@ -95,12 +95,12 @@ function buildCommonArgs(url: string): string[] {
 	}
 	if (url.includes("instagram.com")) {
 		base.push("--referer", "https://www.instagram.com/");
-		base.push("--extractor-args", "instagram:api=1");
-		base.push("--sleep-requests", "3");
-		base.push("--sleep-interval", "3");
+		base.push("--extractor-args", "instagram:api=0");
+		base.push("--sleep-requests", "10");
+		base.push("--sleep-interval", "10");
 		base.push("--no-check-certificates");
 		base.push("--ignore-errors");
-		base.push("--extractor-retries", "3");
+		base.push("--extractor-retries", "5");
 	}
 	return base;
 }
@@ -112,13 +112,35 @@ async function runYtDlpWithFallbacks(url: string, args: string[], cwd?: string) 
 	return await runYtDlpRaw([...common, ...args], cwd);
 }
 
-// Clean Instagram URL to remove tracking parameters
+// Clean Instagram URL and try alternative formats
 function cleanInstagramUrl(url: string): string {
 	if (url.includes("instagram.com")) {
 		// Remove tracking parameters that might cause issues
 		return url.split('?')[0];
 	}
 	return url;
+}
+
+// Try alternative Instagram URL formats
+function getAlternativeInstagramUrls(url: string): string[] {
+	if (!url.includes("instagram.com")) return [url];
+	
+	const cleanUrl = url.split('?')[0];
+	const alternatives = [cleanUrl];
+	
+	// Try embed format
+	if (cleanUrl.includes('/reel/')) {
+		const reelId = cleanUrl.split('/reel/')[1].split('/')[0];
+		alternatives.push(`https://www.instagram.com/reel/${reelId}/embed/`);
+	}
+	
+	// Try p/ format
+	if (cleanUrl.includes('/reel/')) {
+		const reelId = cleanUrl.split('/reel/')[1].split('/')[0];
+		alternatives.push(`https://www.instagram.com/p/${reelId}/`);
+	}
+	
+	return alternatives;
 }
 
 export async function downloadVideoAndExtractAudio(url: string): Promise<DownloadResult> {
@@ -129,11 +151,30 @@ export async function downloadVideoAndExtractAudio(url: string): Promise<Downloa
 	const audiosDir = path.resolve(process.cwd(), "audios");
 	const outputTemplate = path.join(downloadsDir, `${id}-%(title)s.%(ext)s`);
 
-	const { stdout: jsonStdout } = await runYtDlpWithFallbacks(cleanUrl, [
-		"-J",
-		"--no-playlist",
-		cleanUrl,
-	]);
+	// Try multiple URL formats for Instagram
+	const urlsToTry = getAlternativeInstagramUrls(url);
+	let jsonStdout = "";
+	let lastError: Error | null = null;
+
+	for (const tryUrl of urlsToTry) {
+		try {
+			const result = await runYtDlpWithFallbacks(tryUrl, [
+				"-J",
+				"--no-playlist",
+				tryUrl,
+			]);
+			jsonStdout = result.stdout;
+			break; // Success, exit loop
+		} catch (error) {
+			lastError = error as Error;
+			console.log(`[${new Date().toISOString()}] ⚠️ Failed with URL: ${tryUrl}, trying next...`);
+			continue; // Try next URL
+		}
+	}
+
+	if (!jsonStdout) {
+		throw lastError || new Error("All Instagram URL formats failed");
+	}
 
 	let metadata: any;
 	try { metadata = JSON.parse(jsonStdout); } catch { metadata = undefined; }
@@ -164,11 +205,21 @@ export async function downloadVideoAndExtractAudio(url: string): Promise<Downloa
 		audioUrl = candidates.find((u) => typeof u === "string" && u.startsWith("http"));
 	}
 
-	await runYtDlpWithFallbacks(cleanUrl, [
+	// Use the URL that worked for metadata
+	const workingUrl = urlsToTry.find(url => {
+		try {
+			runYtDlpWithFallbacks(url, ["-J", "--no-playlist", url]);
+			return true;
+		} catch {
+			return false;
+		}
+	}) || cleanUrl;
+
+	await runYtDlpWithFallbacks(workingUrl, [
 		"-f", "bv*+ba/best",
 		"--remux-video", "mp4",
 		"-o", outputTemplate,
-		cleanUrl,
+		workingUrl,
 	]);
 
 	const fsMod = await import("fs");
@@ -179,12 +230,12 @@ export async function downloadVideoAndExtractAudio(url: string): Promise<Downloa
 
 	// Extract audio to audios/
 	const audioTemplate = path.join(audiosDir, `${id}-audio.%(ext)s`);
-	await runYtDlpWithFallbacks(cleanUrl, [
+	await runYtDlpWithFallbacks(workingUrl, [
 		"-x",
 		"--audio-format", "mp3",
 		"--audio-quality", "0",
 		"-o", audioTemplate,
-		cleanUrl,
+		workingUrl,
 	]);
 	const audioFile = fsMod.readdirSync(audiosDir).find((f) => f.startsWith(id + "-audio") && f.endsWith(".mp3"));
 	const audioPath = audioFile ? path.join(audiosDir, audioFile) : undefined;
