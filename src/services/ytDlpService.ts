@@ -95,6 +95,12 @@ function buildCommonArgs(url: string): string[] {
 	}
 	if (url.includes("instagram.com")) {
 		base.push("--referer", "https://www.instagram.com/");
+		base.push("--extractor-args", "instagram:api=1");
+		base.push("--sleep-requests", "3");
+		base.push("--sleep-interval", "3");
+		base.push("--no-check-certificates");
+		base.push("--ignore-errors");
+		base.push("--extractor-retries", "3");
 	}
 	return base;
 }
@@ -106,17 +112,27 @@ async function runYtDlpWithFallbacks(url: string, args: string[], cwd?: string) 
 	return await runYtDlpRaw([...common, ...args], cwd);
 }
 
+// Clean Instagram URL to remove tracking parameters
+function cleanInstagramUrl(url: string): string {
+	if (url.includes("instagram.com")) {
+		// Remove tracking parameters that might cause issues
+		return url.split('?')[0];
+	}
+	return url;
+}
+
 export async function downloadVideoAndExtractAudio(url: string): Promise<DownloadResult> {
 	const id = randomUUID();
 	const platform = detectPlatform(url);
+	const cleanUrl = cleanInstagramUrl(url);
 	const downloadsDir = path.resolve(process.cwd(), "downloads");
 	const audiosDir = path.resolve(process.cwd(), "audios");
 	const outputTemplate = path.join(downloadsDir, `${id}-%(title)s.%(ext)s`);
 
-	const { stdout: jsonStdout } = await runYtDlpWithFallbacks(url, [
+	const { stdout: jsonStdout } = await runYtDlpWithFallbacks(cleanUrl, [
 		"-J",
 		"--no-playlist",
-		url,
+		cleanUrl,
 	]);
 
 	let metadata: any;
@@ -148,11 +164,11 @@ export async function downloadVideoAndExtractAudio(url: string): Promise<Downloa
 		audioUrl = candidates.find((u) => typeof u === "string" && u.startsWith("http"));
 	}
 
-	await runYtDlpWithFallbacks(url, [
+	await runYtDlpWithFallbacks(cleanUrl, [
 		"-f", "bv*+ba/best",
 		"--remux-video", "mp4",
 		"-o", outputTemplate,
-		url,
+		cleanUrl,
 	]);
 
 	const fsMod = await import("fs");
@@ -163,12 +179,12 @@ export async function downloadVideoAndExtractAudio(url: string): Promise<Downloa
 
 	// Extract audio to audios/
 	const audioTemplate = path.join(audiosDir, `${id}-audio.%(ext)s`);
-	await runYtDlpWithFallbacks(url, [
+	await runYtDlpWithFallbacks(cleanUrl, [
 		"-x",
 		"--audio-format", "mp3",
 		"--audio-quality", "0",
 		"-o", audioTemplate,
-		url,
+		cleanUrl,
 	]);
 	const audioFile = fsMod.readdirSync(audiosDir).find((f) => f.startsWith(id + "-audio") && f.endsWith(".mp3"));
 	const audioPath = audioFile ? path.join(audiosDir, audioFile) : undefined;
