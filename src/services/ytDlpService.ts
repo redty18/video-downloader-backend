@@ -95,6 +95,11 @@ function buildCommonArgs(url: string): string[] {
 	}
 	if (url.includes("instagram.com")) {
 		base.push("--referer", "https://www.instagram.com/");
+		base.push("--no-check-certificates");
+		base.push("--ignore-errors");
+		base.push("--extractor-args", "instagram:api=1");
+		base.push("--sleep-requests", "1"); // Add delay between requests
+		base.push("--sleep-interval", "1"); // Add delay between requests
 	}
 	return base;
 }
