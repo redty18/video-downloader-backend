@@ -948,9 +948,39 @@ function App() {
             {/* Download History */}
             {downloads.length > 0 && (
               <div>
-                <h2 style={{ fontSize: '24px', fontWeight: '700', color: 'white', marginBottom: '24px', textShadow: '0 2px 4px rgba(0, 0, 0, 0.1)' }}>
-                  Recent Downloads ({downloads.length})
-                </h2>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                  <h2 style={{ fontSize: '24px', fontWeight: '700', color: 'white', margin: 0, textShadow: '0 2px 4px rgba(0, 0, 0, 0.1)' }}>
+                    Recent Downloads ({downloads.length})
+                  </h2>
+                  <button
+                    onClick={() => setDownloads([])}
+                    style={{
+                      background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '12px',
+                      padding: '8px 16px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 8px rgba(239, 68, 68, 0.3)',
+                      transition: 'all 0.3s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 6px 12px rgba(239, 68, 68, 0.4)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 4px 8px rgba(239, 68, 68, 0.3)';
+                    }}
+                  >
+                    🗑️ Clear All
+                  </button>
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {downloads.map((download) => (
                     <DownloadResult key={download.data.id} result={download} />
